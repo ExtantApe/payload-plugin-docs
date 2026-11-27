@@ -53,8 +53,9 @@ beforeAll(async () => {
             return { summary: `About ${feature.title}`, body: `How to use ${feature.title}, step by step.` }
           },
           access: {
-            edit: ({ req }) => ['editor', 'reviewer'].includes(String((req.user as { role?: string } | null)?.role)),
-            review: ({ req }) => (req.user as { role?: string } | null)?.role === 'reviewer',
+            // A 'sloppy' user gets an answer that is truthy but isn't `true`, as a careless access function might give.
+            edit: ({ req }) => ((req.user as { role?: string } | null)?.role === 'sloppy' ? ('yes' as never) : ['editor', 'reviewer'].includes(String((req.user as { role?: string } | null)?.role))),
+            review: ({ req }) => ((req.user as { role?: string } | null)?.role === 'sloppy' ? (1 as never) : (req.user as { role?: string } | null)?.role === 'reviewer'),
           },
           privateTerms: ['secret-project-name'],
           allow: ['YouTube'],
@@ -323,5 +324,61 @@ describe('sources from other plugins', () => {
     expect((await page('x', 'late-plugin')).title).toBe('From another plugin')
     const fn = (payload.config.custom!.docs as { onFeatureChange?: unknown }).onFeatureChange as typeof onFeatureChange
     expect(await fn(payload, { source: 'late-plugin', removedId: 'x' })).toBe('archived')
+  })
+})
+
+describe('refusals the 14-day check added', () => {
+  const member = { id: 'm1', role: 'member', collection: 'users' }
+  const sloppy = { id: 's1', role: 'sloppy', collection: 'users' }
+  const extra = { kind: 'extra', sectionKey: 'help', section: 'Help', slug: 'made-up', title: 'Made up' }
+
+  it('refuses to start without both access.edit and access.review', () => {
+    for (const access of [undefined, {}, { edit: () => true }, { review: () => true }, { edit: true, review: true }])
+      expect(() => docsPlugin({ access } as never)({} as never), JSON.stringify(access)).toThrow(/access\.edit/)
+  })
+
+  it('lets only editors make or change a page, and nobody delete one', async () => {
+    await onFeatureChange(payload, { source: 'catalog', feature: f('a') })
+    const id = (await page('a')).id
+    for (const user of [null, member]) {
+      await expect(payload.create({ collection: 'docs-pages' as never, data: extra as never, ...as(user) })).rejects.toThrow()
+      await expect(payload.update({ collection: 'docs-pages' as never, id, data: { title: 'Changed' } as never, draft: true, ...as(user) })).rejects.toThrow()
+    }
+    for (const user of [null, member, reviewer]) await expect(payload.delete({ collection: 'docs-pages' as never, id, ...as(user) })).rejects.toThrow()
+    const all = await pages()
+    expect(all.map((p) => p.title)).toEqual(['Feature a'])
+    expect(((await payload.findByID({ collection: 'docs-pages' as never, id, draft: true, overrideAccess: true })) as Doc).title).toBe('Feature a')
+  })
+
+  it('reads an access answer that isn’t exactly true as a no', async () => {
+    await onFeatureChange(payload, { source: 'catalog', feature: f('a') })
+    await onFeatureChange(payload, { source: 'catalog', feature: f('b') })
+    await reviewAndPublish((await page('a')).id)
+    const b = (await page('b')).id
+    // Published pages only, without the review, as for any visitor.
+    const seen = (await payload.find({ collection: 'docs-pages' as never, draft: true, ...as(sloppy) })).docs as Doc[]
+    expect(seen.map((d) => d.title)).toEqual(['Feature a'])
+    expect('review' in seen[0]!).toBe(false)
+    await expect(payload.findVersions({ collection: 'docs-pages' as never, ...as(sloppy) })).rejects.toThrow()
+    await expect(payload.create({ collection: 'docs-pages' as never, data: extra as never, ...as(sloppy) })).rejects.toThrow()
+    await expect(payload.update({ collection: 'docs-pages' as never, id: b, data: { title: 'Changed' } as never, draft: true, ...as(sloppy) })).rejects.toThrow()
+    // The review hook asks the reviewer rule itself, so it is checked past the collection's own access.
+    await expect(payload.update({ collection: 'docs-pages' as never, id: b, data: { review: { approved: true, by: 's1' } } as never, draft: true, overrideAccess: true, user: sloppy as never })).rejects.toThrow(/reviewer/)
+    expect((await page('b'))._status).toBe('draft')
+  })
+
+  it('reports two sources with one name in the check, and syncs nothing while they clash', async () => {
+    const custom = payload.config.custom as Doc
+    const before = custom.docsSources
+    custom.docsSources = [...before, { name: 'catalog', list: async () => [f('z')] }]
+    try {
+      features = [f('a')]
+      expect(await checkDocs(payload)).toEqual({ ok: false, problems: [{ kind: 'duplicate', ref: 'sources', detail: 'two feature sources have the same name' }] })
+      await expect(syncDocs(payload)).rejects.toThrow(/same name/)
+      expect(await pages()).toHaveLength(0)
+    } finally {
+      custom.docsSources = before
+    }
+    expect((await syncDocs(payload)).made).toBe(1)
   })
 })
