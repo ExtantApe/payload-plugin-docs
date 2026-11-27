@@ -6,4 +6,6 @@ First version, from the owner's 2026-11-09 decisions (the site's feature docs pr
 
 After the security read of 8250b10: drafts for editors only, explicit approval, every feature's page published, many extra pages, an out-of-date flag that clears, archived pages hidden from draft reads, the section and path reviewed and linted, sources that fail or come back empty reported, failed drafts retried, the generator given only feature fields, and a lint that reads through escaping.
 
-Tested: 20 integration tests with a fake generator. Not tested: a real site, a real model call.
+After the 14-day test audit of 2026-11-26: four tests for refusals that had none. The plugin won't start without `access.edit` and `access.review`; only editors make or change pages and nobody deletes one; an access answer that isn't exactly `true` counts as a no; two feature sources with one name are reported by `checkDocs`, and `syncDocs` changes nothing while they clash. No code change.
+
+Tested: 25 integration tests with a fake generator, and the typecheck. Each new test fails under a one-line change to the guard it covers (7 changes). Not tested: a real site, a real model call.

@@ -2,7 +2,7 @@
 
 Docs for Payload: a docs page for every feature your site lists, made and kept up to date by hook, with hand-written pages beside them, a publish-time lint for internals, and a check that nothing is missing.
 
-**Status:** 0.1.0, not on npm yet. 21 tests pass against Payload 3.92 with an in-memory MongoDB replica set and a fake generator (no AI is called). They cover pages following features, the lint, reviews, publishing rules, public access, the check and the tree. No site uses it yet.
+**Status:** 0.1.0, not on npm yet. 25 tests pass against Payload 3.92 with an in-memory MongoDB replica set and a fake generator (no AI is called). They cover pages following features, the lint, reviews, publishing rules, public access, the check and the tree. No site uses it yet.
 
 ## What it does
 
